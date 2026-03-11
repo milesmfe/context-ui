@@ -1,6 +1,11 @@
 # Context UI
 
-A framework-agnostic, TypeScript-first engine for building dynamic radial context interfaces. Elements are registered with a relevance vector and a developer-defined algorithm determines which elements surface around an anchor point based on a shared context state.
+A framework-agnostic, TypeScript-first engine for building dynamic radial context interfaces.
+Elements are registered with a relevance vector and a developer-defined algorithm determines
+which elements surface around an anchor point based on a shared context state.
+
+Context UI ships three integration surfaces: native web components for plain HTML, a pair of
+declarative React components, and a Svelte action factory. All three share the same core engine.
 
 ---
 
@@ -10,17 +15,19 @@ A framework-agnostic, TypeScript-first engine for building dynamic radial contex
 - [Project Structure](#project-structure)
 - [Installation](#installation)
 - [Core Concepts](#core-concepts)
-- [Implementation Guide](#implementation-guide)
-  - [Vanilla TypeScript](#vanilla-typescript)
-  - [React](#react)
-  - [Svelte](#svelte)
+- [Usage: Vanilla HTML](#usage-vanilla-html)
+- [Usage: React](#usage-react)
+- [Usage: Svelte](#usage-svelte)
 - [API Reference](#api-reference)
   - [ContextUI Class](#contextui-class)
+  - [EngineHolder Class](#engineholder-class)
   - [ContextUIConfig](#contextuiconfig)
   - [RelevanceResult](#relevanceresult)
-  - [useContextUI (React)](#usecontextui-react)
-  - [contextUIAnchor (Svelte)](#contextuianchor-svelte)
-  - [contextUIElement (Svelte)](#contextui-element-svelte)
+  - [Web Components](#web-components)
+  - [React: ContextUIProvider](#react-contextuiprovider)
+  - [React: ContextItem](#react-contextitem)
+  - [React: useContextUI](#react-usecontextui)
+  - [Svelte: createContextUI](#svelte-createcontextui)
 - [Design Suggestions](#design-suggestions)
 - [Contributing: Writing a Framework Wrapper](#contributing-writing-a-framework-wrapper)
 
@@ -28,9 +35,14 @@ A framework-agnostic, TypeScript-first engine for building dynamic radial contex
 
 ## Overview
 
-Context UI decouples two concerns that are typically entangled in adaptive interface implementations: the state of the world (context) and the conditions under which a UI element is relevant (relevance vector). You define both shapes via TypeScript generics. The engine handles slot allocation, radial positioning, animated entry and exit, and DOM lifecycle.
+Context UI decouples two concerns that are typically entangled in adaptive interface
+implementations: the state of the world (context) and the conditions under which a UI element
+is relevant (relevance vector). You define both shapes via TypeScript generics. The engine
+handles slot allocation, radial positioning, animated entry and exit, and DOM lifecycle.
 
-The radial layout places active elements at evenly distributed angles around an anchor element. Up to `maxSlots` elements can be simultaneously visible, each occupying one angular position on the circle defined by `radius`.
+The radial layout places active elements at evenly distributed angles around an anchor element.
+Up to `maxSlots` elements can be simultaneously visible, each occupying one angular position on
+the circle defined by `radius`.
 
 ---
 
@@ -38,17 +50,14 @@ The radial layout places active elements at evenly distributed angles around an 
 
 ```
 .
-├── package-lock.json
 ├── package.json
 ├── src
-│   ├── core.ts       # Framework-agnostic engine class
-│   ├── react.ts      # React hook wrapper
-│   └── svelte.ts     # Svelte action wrappers
+│   ├── core.ts       # Engine class, EngineHolder, and web component definitions
+│   ├── react.ts      # ContextUIProvider, ContextItem, and useContextUI hook
+│   └── svelte.ts     # createContextUI factory returning Svelte actions
 ├── tsconfig.json
 └── tsup.config.ts
 ```
-
-The build produces three independent entry points under `dist/`, each available as both ESM and CJS with bundled type declarations.
 
 ---
 
@@ -58,14 +67,12 @@ The build produces three independent entry points under `dist/`, each available 
 npm install context-ui
 ```
 
-React and Svelte integrations are available as sub-path exports. The peer dependencies for each are optional; install only what your project requires.
+React and Svelte integrations are available as sub-path exports. Their peer dependencies
+are optional; install only what your project requires.
 
 ```bash
-# React
-npm install react
-
-# Svelte
-npm install svelte
+npm install react        # for the React integration
+npm install svelte       # for the Svelte integration
 ```
 
 ---
@@ -74,90 +81,114 @@ npm install svelte
 
 ### ContextType
 
-`ContextType` is a developer-defined interface representing the global state of your application at any given moment. Examples include the current user input, selected category, scroll depth, or any derived signal. The engine holds a partial copy of this state internally and merges updates incrementally via `updateContext`.
+A developer-defined interface representing the global state of your application at any moment.
+The engine holds a partial copy internally and merges updates incrementally via `updateContext`.
 
 ### VectorType
 
-`VectorType` is a developer-defined interface attached to each registered element. It encodes the conditions under which that element should be considered relevant. The engine passes both the current context and an element's vector to the `relevanceAlgorithm` on every context update.
+A developer-defined interface attached to each registered element describing the conditions
+under which that element should be considered relevant.
 
 ### relevanceAlgorithm
 
-The `relevanceAlgorithm` function is the single point of integration between context and visibility. Its signature is:
+The single integration point between context and visibility:
 
 ```typescript
 (context: ContextType, vector: VectorType) => boolean | RelevanceResult;
 ```
 
-Returning `true` causes the element to appear. Returning `false` causes it to disappear. Returning a `RelevanceResult` object allows you to also specify a preferred radial slot index, giving you deterministic positioning instead of random slot assignment.
+Return `true` to show, `false` to hide, or a `RelevanceResult` to also specify a preferred
+slot index for deterministic radial placement.
 
 ### Slots
 
-The radial ring is divided into `maxSlots` evenly spaced angular positions. Each slot can hold one element. Slots are indexed from `0` to `maxSlots - 1`, and their angles are calculated as:
+The radial ring is divided into `maxSlots` equally spaced angular positions indexed from `0`
+to `maxSlots - 1`. Slot `0` sits at the 3 o'clock position (angle 0 radians); indices
+increase clockwise.
 
 ```
 angle = slotIndex * (2 * PI / maxSlots)
 ```
 
-Slot `0` is positioned at the 3 o'clock position (angle 0 radians). Indices increase clockwise.
+---
+
+## Usage: Vanilla HTML
+
+Import the package via a script tag from a CDN or local build. The web components
+`<context-ui>` and `<context-item>` are registered automatically when the module loads.
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <script type="module" src="./node_modules/context-ui/dist/core.js"></script>
+  </head>
+  <body>
+    <context-ui
+      id="ui"
+      relevance="myRelevanceImplementation"
+      max-slots="8"
+      radius="120"
+    >
+      <context-item
+        id="action-search"
+        vector='{"type":"action","label":"Search"}'
+      >
+        <button class="bubble">Search</button>
+      </context-item>
+      <context-item id="action-edit" vector='{"type":"action","label":"Edit"}'>
+        <button class="bubble">Edit</button>
+      </context-item>
+      <context-item id="action-share" vector='{"type":"info","label":"Share"}'>
+        <button class="bubble">Share</button>
+      </context-item>
+    </context-ui>
+
+    <button onclick="showActions()">Open</button>
+    <button onclick="hideActions()">Close</button>
+
+    <script>
+      function myRelevanceImplementation(context, vector) {
+        if (!context.open) return false;
+        if (context.filter) return vector.type === context.filter;
+        return true;
+      }
+
+      const ui = document.getElementById("ui");
+
+      function showActions() {
+        ui.updateContext({ open: true });
+      }
+
+      function hideActions() {
+        ui.updateContext({ open: false });
+      }
+    </script>
+  </body>
+</html>
+```
+
+To provide the relevance function as a direct reference rather than a global name, assign it
+to the `relevanceFn` property before the element connects:
+
+```javascript
+const ui = document.getElementById("ui");
+ui.relevanceFn = function (context, vector) {
+  return context.open && vector.type === "action";
+};
+```
 
 ---
 
-## Implementation Guide
+## Usage: React
 
-### Vanilla TypeScript
-
-Instantiate `ContextUI` directly. Define your context and vector shapes, write the relevance algorithm, and call `updateContext` whenever your application state changes.
-
-```typescript
-import { ContextUI } from "context-ui";
-
-interface AppContext {
-  activeCategory: string;
-  inputLength: number;
-}
-
-interface ItemVector {
-  category: string;
-  minInputLength: number;
-}
-
-const anchor = document.getElementById("anchor")!;
-
-const engine = new ContextUI<AppContext, ItemVector>({
-  anchor,
-  maxSlots: 8,
-  radius: 120,
-  animationDuration: 350,
-  relevanceAlgorithm(context, vector) {
-    const categoryMatch = context.activeCategory === vector.category;
-    const inputSufficient = (context.inputLength ?? 0) >= vector.minInputLength;
-    return categoryMatch && inputSufficient;
-  },
-});
-
-const bubble = document.createElement("div");
-bubble.classList.add("context-ui-default-bubble");
-bubble.textContent = "Suggestion A";
-
-engine.registerElement("suggestion-a", bubble, {
-  category: "search",
-  minInputLength: 3,
-});
-
-// Trigger evaluation
-engine.updateContext({ activeCategory: "search", inputLength: 5 });
-
-// Cleanup
-window.addEventListener("beforeunload", () => engine.destroy());
-```
-
-### React
-
-Use the `useContextUI` hook. The hook returns refs for the anchor and optional container elements, and exposes `updateContext`, `registerElement`, and `unregisterElement` as stable function references.
+Import `ContextUIProvider`, `ContextItem`, and `useContextUI` from `context-ui/react`.
+`ContextUIProvider` renders the anchor div and provides the engine to all descendants via
+React context. `ContextItem` registers its wrapper div with the engine. `useContextUI`
+exposes `updateContext` from anywhere inside the provider tree.
 
 ```tsx
-import { useContextUI } from "context-ui/react";
-import { useRef, useEffect } from "react";
+import { ContextUIProvider, ContextItem, useContextUI } from "context-ui/react";
 
 interface AppContext {
   mode: "browse" | "edit" | "idle";
@@ -167,106 +198,117 @@ interface ItemVector {
   visibleIn: AppContext["mode"][];
 }
 
-export function RadialMenu() {
-  const {
-    anchorRef,
-    containerRef,
-    updateContext,
-    registerElement,
-    unregisterElement,
-  } = useContextUI<AppContext, ItemVector>({
-    maxSlots: 6,
-    radius: 100,
-    relevanceAlgorithm(context, vector) {
-      return vector.visibleIn.includes(context.mode);
-    },
-  });
+function relevance(ctx: AppContext, vec: ItemVector): boolean {
+  return vec.visibleIn.includes(ctx.mode);
+}
 
-  const editRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (editRef.current) {
-      registerElement("edit-action", editRef.current, {
-        visibleIn: ["browse"],
-      });
-    }
-    return () => unregisterElement("edit-action");
-  }, []);
-
+function Controls() {
+  const { updateContext } = useContextUI<AppContext>();
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
-      <div
-        ref={anchorRef}
-        style={{
-          width: 48,
-          height: 48,
-          background: "#333",
-          borderRadius: "50%",
-        }}
-      />
-      <div ref={editRef} className="context-ui-default-bubble">
-        Edit
-      </div>
-      <button onClick={() => updateContext({ mode: "browse" })}>
-        Browse Mode
-      </button>
-      <button onClick={() => updateContext({ mode: "idle" })}>Idle Mode</button>
+    <div>
+      <button onClick={() => updateContext({ mode: "browse" })}>Browse</button>
+      <button onClick={() => updateContext({ mode: "edit" })}>Edit</button>
+      <button onClick={() => updateContext({ mode: "idle" })}>Idle</button>
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <>
+      <ContextUIProvider
+        relevance={relevance}
+        maxSlots={8}
+        radius={130}
+        className="anchor"
+      >
+        Open
+        <ContextItem id="edit-btn" vector={{ visibleIn: ["browse", "edit"] }}>
+          <button>Edit</button>
+        </ContextItem>
+        <ContextItem id="share-btn" vector={{ visibleIn: ["browse"] }}>
+          <button>Share</button>
+        </ContextItem>
+        <ContextItem id="delete-btn" vector={{ visibleIn: ["edit"] }}>
+          <button>Delete</button>
+        </ContextItem>
+      </ContextUIProvider>
+      <Controls />
+    </>
   );
 }
 ```
 
-Note that the engine is initialised once on mount and destroyed on unmount. The `config` object is passed into a `useEffect` dependency array; provide a stable reference (e.g. via `useMemo`) if your config values are dynamic to avoid unnecessary engine re-instantiation.
+The engine is initialized in a `useLayoutEffect` inside `ContextUIProvider`, which runs
+before children's passive `useEffect` calls. Items registered in `useEffect` therefore
+always find a live engine on first mount.
 
-### Svelte
+---
 
-Two Svelte actions are provided: `contextUIAnchor` and `contextUIElement`. The anchor action initialises the engine and attaches it to `window.__contextUIEngine`. The element action reads from that global reference to register child nodes.
+## Usage: Svelte
+
+Import `createContextUI` from `context-ui/svelte`. Call it once in the component script
+block to get the `anchor` action, `item` action, and `updateContext` function. All three
+share a single engine instance through the factory closure.
 
 ```svelte
 <script lang="ts">
-  import { contextUIAnchor, contextUIElement } from "context-ui/svelte";
+  import { createContextUI } from 'context-ui/svelte';
 
   interface AppContext {
-    hovered: boolean;
+    open: boolean;
+    filter: string | null;
   }
 
   interface ItemVector {
-    requiresHover: boolean;
+    type: string;
+    label: string;
   }
 
-  let engine: any;
-
-  const config = {
+  const ui = createContextUI<AppContext, ItemVector>({
     maxSlots: 8,
-    radius: 130,
-    relevanceAlgorithm(context: AppContext, vector: ItemVector) {
-      return vector.requiresHover === context.hovered;
+    radius: 120,
+    relevanceAlgorithm(ctx, vec) {
+      if (!ctx.open) return false;
+      if (ctx.filter) return vec.type === ctx.filter;
+      return true;
     },
-  };
+  });
 
-  function handleMouseEnter() {
-    engine?.updateContext({ hovered: true });
-  }
+  let open = false;
+  let filter: string | null = null;
 
-  function handleMouseLeave() {
-    engine?.updateContext({ hovered: false });
-  }
+  $: ui.updateContext({ open, filter });
 </script>
 
-<div
-  use:contextUIAnchor={config}
-  bind:this={engine}
-  on:mouseenter={handleMouseEnter}
-  on:mouseleave={handleMouseLeave}
-  style="width: 48px; height: 48px; background: #333; border-radius: 50%;"
-/>
+<button use:ui.anchor on:click={() => (open = !open)}>
+  {open ? 'Close' : 'Open'}
+</button>
 
-<div use:contextUIElement={{ id: "tooltip-a", vector: { requiresHover: true } }}>
-  Option A
+<div use:ui.item={{ id: 'search', vector: { type: 'action', label: 'Search' } }}>
+  <button>Search</button>
+</div>
+
+<div use:ui.item={{ id: 'edit', vector: { type: 'action', label: 'Edit' } }}>
+  <button>Edit</button>
+</div>
+
+<div use:ui.item={{ id: 'info', vector: { type: 'info', label: 'About' } }}>
+  <button>About</button>
 </div>
 ```
 
-The `window.__contextUIEngine` pattern used in `svelte.ts` is a pragmatic bridge that avoids Svelte store boilerplate for this use case. In production, consider wrapping the engine reference in a Svelte writable store and exporting it from the anchor action return value to remove the global dependency.
+Dynamic lists integrate naturally with Svelte's `{#each}` block. The `item` action's
+`update` lifecycle unregisters the old entry and re-registers with the new parameters
+whenever the block re-renders:
+
+```svelte
+{#each contacts as contact (contact.id)}
+  <div use:ui.item={{ id: contact.id, vector: contact }}>
+    {contact.name}
+  </div>
+{/each}
+```
 
 ---
 
@@ -278,7 +320,7 @@ The `window.__contextUIEngine` pattern used in `svelte.ts` is a pragmatic bridge
 class ContextUI<ContextType, VectorType>
 ```
 
-The primary engine class. Manages registration, evaluation, slot allocation, and DOM transitions.
+The core engine. Manages registration, evaluation, slot allocation, and DOM transitions.
 
 #### Constructor
 
@@ -288,12 +330,34 @@ new ContextUI(config: ContextUIConfig<ContextType, VectorType>)
 
 #### Methods
 
-| Method              | Signature                                                                 | Description                                                                                                                                                                     |
-| ------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `registerElement`   | `(id: string, domNode: HTMLElement, relevanceVector: VectorType) => void` | Registers a DOM node with the engine. The node is assigned the `context-ui-element` class and stored in the internal registry. It is not yet appended to the DOM at this stage. |
-| `unregisterElement` | `(id: string) => void`                                                    | Triggers the exit transition for the element if active, then removes it from the registry.                                                                                      |
-| `updateContext`     | `(newContext: Partial<ContextType>) => void`                              | Performs a shallow merge of `newContext` into the internal context state, then runs a full evaluation pass over the registry.                                                   |
-| `destroy`           | `() => void`                                                              | Removes all managed DOM nodes and clears the registry and active element maps. Call this during component or page teardown.                                                     |
+| Method              | Signature                                                                 | Description                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `registerElement`   | `(id: string, domNode: HTMLElement, relevanceVector: VectorType) => void` | Registers a DOM node. Adds the `context-ui-element` class. Not yet visible.                                                      |
+| `unregisterElement` | `(id: string) => void`                                                    | Triggers the exit transition and removes the element from the registry.                                                          |
+| `updateVector`      | `(id: string, newVector: VectorType) => void`                             | Replaces the relevance vector of a registered element and immediately re-evaluates its visibility without a full context update. |
+| `updateContext`     | `(newContext: Partial<ContextType>) => void`                              | Shallow-merges the partial update and runs a full evaluation pass over all registered elements.                                  |
+| `destroy`           | `() => void`                                                              | Removes all managed DOM nodes and clears all internal state.                                                                     |
+
+---
+
+### EngineHolder Class
+
+```typescript
+class EngineHolder<ContextType, VectorType>
+```
+
+A deferred engine proxy used internally by all framework integrations. Queues registration
+calls made before the engine is initialized and replays them once `setEngine` is called.
+Import and use this class when writing a new framework wrapper.
+
+| Method          | Signature                                                     | Description                                                                    |
+| --------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `setEngine`     | `(engine: ContextUI<ContextType, VectorType>) => void`        | Attaches an engine and flushes the pending registration queue.                 |
+| `register`      | `(id: string, node: HTMLElement, vector: VectorType) => void` | Registers an element, or queues the call if the engine is not yet attached.    |
+| `unregister`    | `(id: string) => void`                                        | Unregisters an element and removes any matching pending queue entry.           |
+| `updateVector`  | `(id: string, vector: VectorType) => void`                    | Delegates to `ContextUI.updateVector`.                                         |
+| `updateContext` | `(ctx: Partial<ContextType>) => void`                         | Delegates to `ContextUI.updateContext`.                                        |
+| `destroy`       | `() => void`                                                  | Destroys the engine and clears all internal state including the pending queue. |
 
 ---
 
@@ -303,14 +367,14 @@ new ContextUI(config: ContextUIConfig<ContextType, VectorType>)
 interface ContextUIConfig<ContextType, VectorType>
 ```
 
-| Property             | Type                                                                       | Required | Default         | Description                                                                                                                                                           |
-| -------------------- | -------------------------------------------------------------------------- | -------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `anchor`             | `HTMLElement`                                                              | Yes      |                 | The DOM element that serves as the origin point of the radial layout. All element positions are calculated relative to the centre of its bounding rect.               |
-| `container`          | `HTMLElement`                                                              | No       | `document.body` | The DOM element into which managed elements are appended.                                                                                                             |
-| `maxSlots`           | `number`                                                                   | No       | `12`            | The number of angular positions on the radial ring. Determines the maximum number of simultaneously visible elements.                                                 |
-| `radius`             | `number`                                                                   | No       | `150`           | The distance in pixels from the anchor centre to the centre of each placed element.                                                                                   |
-| `animationDuration`  | `number`                                                                   | No       | `400`           | Duration in milliseconds for entry and exit CSS transitions. Also controls the delay before a departing element is removed from the DOM.                              |
-| `relevanceAlgorithm` | `(context: ContextType, vector: VectorType) => boolean \| RelevanceResult` | Yes      |                 | Called on every `updateContext` invocation for every registered element. Return `true` or `{ isRelevant: true }` to show, `false` or `{ isRelevant: false }` to hide. |
+| Property             | Type                                                                       | Required | Default         | Description                                                   |
+| -------------------- | -------------------------------------------------------------------------- | -------- | --------------- | ------------------------------------------------------------- |
+| `anchor`             | `HTMLElement`                                                              | Yes      |                 | Radial origin element.                                        |
+| `container`          | `HTMLElement`                                                              | No       | `document.body` | Element into which managed nodes are appended when shown.     |
+| `maxSlots`           | `number`                                                                   | No       | `12`            | Maximum simultaneously visible elements.                      |
+| `radius`             | `number`                                                                   | No       | `150`           | Distance in pixels from anchor center to placed elements.     |
+| `animationDuration`  | `number`                                                                   | No       | `400`           | Transition and DOM removal delay in milliseconds.             |
+| `relevanceAlgorithm` | `(context: ContextType, vector: VectorType) => boolean \| RelevanceResult` | Yes      |                 | Visibility decision function invoked on every context update. |
 
 ---
 
@@ -323,98 +387,166 @@ interface RelevanceResult {
 }
 ```
 
-When `slot` is defined and the target slot is unoccupied, the element is placed at that angular index. If the target slot is occupied, the engine falls back to random free slot assignment. If no slots are available, the element is not shown.
+Return this instead of a plain boolean when slot placement should be deterministic. If the
+preferred `slot` is already occupied, the engine falls back to random free slot assignment.
 
 ---
 
-### useContextUI (React)
+### Web Components
+
+#### `<context-ui>`
+
+The anchor element. Initializes and hosts the engine. Designed for use in plain HTML without
+any build tooling.
+
+| Attribute            | Type     | Default | Description                                                           |
+| -------------------- | -------- | ------- | --------------------------------------------------------------------- |
+| `relevance`          | `string` |         | Name of a `window`-scoped function to use as the relevance algorithm. |
+| `max-slots`          | `number` | `12`    | Number of radial slots.                                               |
+| `radius`             | `number` | `150`   | Radius in pixels.                                                     |
+| `animation-duration` | `number` | `400`   | Transition duration in milliseconds.                                  |
+
+| Property      | Type       | Description                                                                                          |
+| ------------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| `relevanceFn` | `Function` | Assign directly to provide the algorithm without a global name. Takes precedence over the attribute. |
+
+| Method          | Signature                                | Description                                      |
+| --------------- | ---------------------------------------- | ------------------------------------------------ |
+| `updateContext` | `(ctx: Record<string, unknown>) => void` | Merges a context update and triggers evaluation. |
+| `getEngine`     | `() => ContextUI \| null`                | Returns the underlying engine instance.          |
+
+#### `<context-item>`
+
+Registers its first child element with the nearest `<context-ui>` ancestor's engine.
+If there is no child element, the `<context-item>` itself is registered.
+
+| Attribute | Type     | Required | Description                                                                                               |
+| --------- | -------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| `id`      | `string` | Yes      | Unique identifier passed to the engine registry.                                                          |
+| `vector`  | `string` | No       | JSON-serialized relevance vector. Updating this attribute after mount calls `updateVector` on the engine. |
+
+#### `defineElements()`
 
 ```typescript
-function useContextUI<ContextType, VectorType>(
-  config: Omit<
-    ContextUIConfig<ContextType, VectorType>,
-    "anchor" | "container"
-  >,
-): {
-  anchorRef: RefObject<HTMLDivElement>;
-  containerRef: RefObject<HTMLDivElement>;
-  updateContext: (newContext: Partial<ContextType>) => void;
-  registerElement: (
-    id: string,
-    node: HTMLElement | null,
-    vector: VectorType,
-  ) => void;
-  unregisterElement: (id: string) => void;
+function defineElements(): void;
+```
+
+Registers the `context-ui` and `context-item` custom elements. Called automatically on
+module load in browser environments. Invoke manually when import-time side effects are
+undesirable (SSR builds, test environments, certain bundler configurations).
+
+---
+
+### React: ContextUIProvider
+
+```typescript
+function ContextUIProvider<ContextType, VectorType>(
+  props: ContextUIProviderProps<ContextType, VectorType>,
+): JSX.Element;
+```
+
+| Prop                | Type                                                                | Required | Description                                           |
+| ------------------- | ------------------------------------------------------------------- | -------- | ----------------------------------------------------- |
+| `relevance`         | `(ctx: ContextType, vec: VectorType) => boolean \| RelevanceResult` | Yes      | The relevance algorithm.                              |
+| `maxSlots`          | `number`                                                            | No       | Defaults to `12`.                                     |
+| `radius`            | `number`                                                            | No       | Defaults to `150`.                                    |
+| `animationDuration` | `number`                                                            | No       | Defaults to `400`.                                    |
+| `className`         | `string`                                                            | No       | Applied to the rendered anchor div.                   |
+| `style`             | `CSSProperties`                                                     | No       | Applied to the rendered anchor div.                   |
+| `children`          | `ReactNode`                                                         | No       | Anchor content alongside `ContextItem` registrations. |
+
+---
+
+### React: ContextItem
+
+```typescript
+function ContextItem<VectorType>(
+  props: ContextItemProps<VectorType>,
+): JSX.Element;
+```
+
+| Prop        | Type            | Required | Description                                                                                                           |
+| ----------- | --------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `id`        | `string`        | Yes      | Unique identifier within the engine registry. Changing this prop unmounts the old registration and creates a new one. |
+| `vector`    | `VectorType`    | Yes      | Relevance vector captured at registration time.                                                                       |
+| `className` | `string`        | No       | Applied to the rendered wrapper div.                                                                                  |
+| `style`     | `CSSProperties` | No       | Applied to the rendered wrapper div.                                                                                  |
+| `children`  | `ReactNode`     | No       | Content rendered inside the managed element.                                                                          |
+
+---
+
+### React: useContextUI
+
+```typescript
+function useContextUI<ContextType>(): {
+  updateContext: (ctx: Partial<ContextType>) => void;
 };
 ```
 
-A React hook that manages the `ContextUI` engine lifecycle. The engine is created once when `anchorRef.current` becomes non-null and destroyed on component unmount.
-
-| Return Value        | Description                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `anchorRef`         | Attach to the element that should serve as the radial anchor.                                                 |
-| `containerRef`      | Attach to the element into which context elements will be appended. If not attached, `document.body` is used. |
-| `updateContext`     | Triggers a context merge and layout evaluation. Safe to call from event handlers.                             |
-| `registerElement`   | Registers a DOM node with the engine. Typically called inside a `useEffect` after a ref resolves.             |
-| `unregisterElement` | Removes an element from the engine. Call this in the cleanup return of the `useEffect` that registered it.    |
+Returns `updateContext` from the nearest `ContextUIProvider`. Must be called from within
+the provider tree.
 
 ---
 
-### contextUIAnchor (Svelte)
+### Svelte: createContextUI
 
 ```typescript
-function contextUIAnchor<ContextType, VectorType>(
-  node: HTMLElement,
+function createContextUI<ContextType, VectorType>(
   config: Omit<ContextUIConfig<ContextType, VectorType>, "anchor">,
-): { destroy?: () => void };
+): ContextUIActions<ContextType, VectorType>;
 ```
 
-A Svelte action applied to the anchor element. Instantiates the engine with `node` as the anchor and attaches it to `window.__contextUIEngine`. Calls `engine.destroy()` and removes the global reference when the node is destroyed.
-
----
-
-### contextUIElement (Svelte)
-
-```typescript
-function contextUIElement<VectorType>(
-  node: HTMLElement,
-  params: { id: string; vector: VectorType },
-): { destroy?: () => void };
-```
-
-A Svelte action applied to any element intended for registration. Reads `window.__contextUIEngine` and calls `registerElement`. Applies the `context-ui-default-bubble` class automatically. Calls `unregisterElement` when the node is destroyed.
+| Return field    | Type                                  | Description                                                                                                                                   |
+| --------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anchor`        | Svelte action                         | Apply with `use:ui.anchor`. Initializes the engine using the node as the radial origin.                                                       |
+| `item`          | Svelte action                         | Apply with `use:ui.item={{ id, vector }}`. Registers the node with the engine. Handles parameter updates via the action's `update` lifecycle. |
+| `updateContext` | `(ctx: Partial<ContextType>) => void` | Merges a context update and triggers evaluation. Use in a reactive statement for automatic synchronization.                                   |
 
 ---
 
 ## Design Suggestions
 
-**Anchor sizing.** The anchor element's bounding rect centre is used as the origin for all calculations. A visually small but interaction-sized anchor (e.g. 48x48px minimum) reduces positioning drift on resize and touch targets.
+**Anchor sizing.** The anchor element's bounding rect center is the radial origin. A minimum
+of 48x48px reduces positioning drift during window resize and meets touch target guidelines.
 
-**Radius calibration.** At `maxSlots: 12` and `radius: 150`, adjacent elements are approximately 78px apart at their centres (arc length = `2 * PI * radius / maxSlots`). For larger elements such as cards, increase the radius proportionally or reduce `maxSlots` to avoid overlap.
+**Radius calibration.** At `maxSlots: 12` and `radius: 150`, adjacent elements are
+approximately 78px apart at their centers (arc length = `2 * PI * radius / maxSlots`).
+Scale radius proportionally when increasing element size or decreasing slot count to
+prevent visual overlap.
 
-**Slot determinism.** For interfaces where element identity should be spatially consistent across context transitions (e.g. a persistent radial menu), always return a `RelevanceResult` with a fixed `slot` value per element rather than relying on random slot assignment.
+**Slot determinism.** For interfaces where element identity should be spatially consistent
+across context transitions, return a `RelevanceResult` with a fixed `slot` per element
+rather than relying on random assignment. This prevents elements from jumping positions
+as the visible set changes.
 
-**Transition tuning.** The injected styles use `cubic-bezier(0.25, 1, 0.5, 1)` for position and scale, producing an overshoot-free ease-out. If you want spring-like overshoot, increase the third parameter toward `1.5`. The opacity transition is intentionally linear and shorter than the position transition; changing both independently controls perceived element weight.
+**Transition tuning.** The injected styles use `cubic-bezier(0.25, 1, 0.5, 1)` for
+position and scale, producing an overshoot-free ease-out. Increasing the third parameter
+toward `1.5` introduces spring-like overshoot. Opacity uses a linear curve shorter than
+the position transition to create a staggered feel.
 
-**Overriding default styles.** The `.context-ui-element`, `.context-ui-visible`, and `.context-ui-default-bubble` classes are injected once into `document.head` via a `<style>` tag with id `context-ui-styles`. You can override any of these rules in your own stylesheet by applying specificity rules, or by replacing the injected styles entirely after construction.
+**Overriding default styles.** The `.context-ui-element`, `.context-ui-visible`, and
+`.context-ui-default-bubble` classes are injected once into `document.head`. Override
+any of these in your own stylesheet with higher specificity, or prevent injection entirely
+by inserting a style element with id `context-ui-styles` before importing the module.
 
-**Context update frequency.** `updateContext` triggers a full evaluation pass over every registered element. For high-frequency signals such as `mousemove` or `scroll`, debounce or throttle calls to `updateContext` before passing values to the engine.
+**Context update frequency.** `updateContext` runs a full evaluation pass over every
+registered element. Debounce or throttle calls driven by high-frequency signals such as
+`mousemove`, `scroll`, or `input` events before passing values to the engine.
 
-**Multiple instances.** Each `ContextUI` instance is entirely self-contained. Multiple instances with different anchors, radii, and relevance algorithms can coexist on the same page without interference.
+**Multiple instances.** Each `createContextUI` call, each `ContextUIProvider`, and each
+`<context-ui>` element manages a fully independent engine. Multiple instances with different
+anchors, radii, and algorithms coexist on the same page without interference.
 
 ---
 
 ## Contributing: Writing a Framework Wrapper
 
-The framework wrappers in `src/react.ts` and `src/svelte.ts` follow a consistent pattern. A wrapper has three responsibilities:
-
-1. Instantiate `ContextUI` when the anchor node becomes available.
-2. Expose `updateContext`, `registerElement`, and `unregisterElement` to consumer code.
-3. Call `engine.destroy()` when the component or directive is torn down.
+All framework wrappers share a structural contract and a lifecycle pattern built around
+`EngineHolder`.
 
 ### Structural contract
 
-Any wrapper must satisfy this interface at minimum:
+A wrapper exposes at minimum:
 
 ```typescript
 interface ContextUIWrapperReturn<ContextType, VectorType> {
@@ -424,44 +556,66 @@ interface ContextUIWrapperReturn<ContextType, VectorType> {
 }
 ```
 
-The wrapper accepts a config object of type `Omit<ContextUIConfig<ContextType, VectorType>, "anchor">` since the anchor is resolved by the framework's own ref or directive mechanism.
+It accepts `Omit<ContextUIConfig<ContextType, VectorType>, 'anchor'>` because the anchor
+is resolved by the framework's own DOM binding mechanism.
+
+### The EngineHolder pattern
+
+`EngineHolder` solves the ordering gap between item elements mounting and the anchor
+resolving its engine. Use it in every wrapper:
+
+```typescript
+import { ContextUI, EngineHolder } from "context-ui";
+
+const holder = new EngineHolder<ContextType, VectorType>();
+
+// Run when the anchor node is available (useLayoutEffect, onMounted, action callback)
+const engine = new ContextUI({ ...config, anchor: anchorNode });
+holder.setEngine(engine);
+
+// Safe to call before or after the anchor is ready
+holder.register(id, itemNode, vector);
+
+// Run during teardown
+holder.destroy();
+```
 
 ### Step-by-step for a new framework
 
 **Step 1: Identify the anchor resolution pattern.**
 
-Frameworks expose DOM nodes differently. React uses refs (`useRef`), Svelte uses actions (node passed directly as first argument), Vue uses template refs resolved in `onMounted`. Identify where in your framework's lifecycle the anchor `HTMLElement` is first available.
+Determine when the framework exposes the anchor DOM node. React uses a `ref` resolved in
+`useLayoutEffect`. Svelte passes the node directly as the first argument to an action.
+Vue resolves `templateRef.value` in `onMounted`.
 
-**Step 2: Instantiate the engine at that point.**
+**Step 2: Initialize the engine at that point.**
 
 ```typescript
 const engine = new ContextUI({ ...config, anchor: resolvedNode });
+holder.setEngine(engine);
 ```
 
-Store the engine reference in a mutable variable, ref, or reactive primitive that persists across renders but does not trigger re-renders itself.
+**Step 3: Expose registration and context update APIs.**
 
-**Step 3: Expose context and registration APIs.**
+Wrap `holder.register`, `holder.unregister`, and `holder.updateContext` in idioms
+appropriate to the target framework.
 
-Wrap `engine.updateContext`, `engine.registerElement`, and `engine.unregisterElement` in functions appropriate to your framework's idiom. In React these become stable function references. In Svelte they can be returned from the action or attached to the window reference. In Vue they would typically be returned from a composable.
+**Step 4: Call holder.destroy() in the teardown hook.**
 
-**Step 4: Destroy the engine on teardown.**
+React: `useEffect` or `useLayoutEffect` cleanup return. Svelte: action `destroy` property.
+Vue: `onUnmounted`.
 
-Every framework provides a teardown hook: React's `useEffect` cleanup return, Svelte action's `destroy` property, Vue's `onUnmounted`. Call `engine.destroy()` there unconditionally.
-
-**Step 5: Add the entry point to tsup.config.ts and package.json.**
-
-Add your source file as a named entry in `tsup.config.ts`:
+**Step 5: Register the entry point in tsup.config.ts and package.json.**
 
 ```typescript
 entry: {
-  core: "src/core.ts",
-  react: "src/react.ts",
-  svelte: "src/svelte.ts",
-  vue: "src/vue.ts",        // your addition
+  core: 'src/core.ts',
+  react: 'src/react.ts',
+  svelte: 'src/svelte.ts',
+  vue: 'src/vue.ts',
 },
+external: ['react', 'svelte', 'vue'],
 ```
-
-Register the sub-path export in `package.json`:
 
 ```json
 "./vue": {
@@ -471,52 +625,40 @@ Register the sub-path export in `package.json`:
 }
 ```
 
-Add the framework as a peer dependency with the `optional: true` meta flag, matching the existing pattern in `package.json`.
+Add the framework as an optional peer dependency following the existing pattern in
+`package.json`.
 
-**Step 6: Add the framework as an external in tsup.config.ts.**
-
-```typescript
-external: ["react", "svelte", "vue"],
-```
-
-This prevents the framework runtime from being bundled into the output.
-
-### Vue 3 example skeleton
+### Vue 3 reference skeleton
 
 ```typescript
-import { onMounted, onUnmounted, ref, Ref } from "vue";
-import { ContextUI, ContextUIConfig } from "./core";
+import { onMounted, onUnmounted, ref } from "vue";
+import type { Ref } from "vue";
+import { ContextUI, EngineHolder } from "context-ui";
+import type { ContextUIConfig, RelevanceResult } from "context-ui";
 
-export function useContextUI<ContextType, VectorType>(
-  config: Omit<
-    ContextUIConfig<ContextType, VectorType>,
-    "anchor" | "container"
-  >,
+export function createContextUI<ContextType, VectorType>(
+  config: Omit<ContextUIConfig<ContextType, VectorType>, "anchor">,
 ) {
+  const holder = new EngineHolder<ContextType, VectorType>();
   const anchorRef: Ref<HTMLElement | null> = ref(null);
-  let engine: ContextUI<ContextType, VectorType> | null = null;
 
   onMounted(() => {
     if (anchorRef.value) {
-      engine = new ContextUI({ ...config, anchor: anchorRef.value });
+      const engine = new ContextUI({ ...config, anchor: anchorRef.value });
+      holder.setEngine(engine);
     }
   });
 
   onUnmounted(() => {
-    engine?.destroy();
-    engine = null;
+    holder.destroy();
   });
 
-  const updateContext = (ctx: Partial<ContextType>) =>
-    engine?.updateContext(ctx);
-
-  const registerElement = (id: string, node: HTMLElement, vector: VectorType) =>
-    engine?.registerElement(id, node, vector);
-
-  const unregisterElement = (id: string) => engine?.unregisterElement(id);
-
-  return { anchorRef, updateContext, registerElement, unregisterElement };
+  return {
+    anchorRef,
+    updateContext: (ctx: Partial<ContextType>) => holder.updateContext(ctx),
+    registerElement: (id: string, node: HTMLElement, vector: VectorType) =>
+      holder.register(id, node, vector),
+    unregisterElement: (id: string) => holder.unregister(id),
+  };
 }
 ```
-
-This skeleton follows the same lifecycle contract as the React hook and is sufficient to support the full API surface.
